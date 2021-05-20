@@ -2,9 +2,11 @@ package server
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -33,6 +35,43 @@ type Request struct {
 
 type Response struct {
 	StatusCode int
+	Body       []byte
+	Headers    map[string]string
+}
+
+func (r Response) SetHeader(name string, value string) Response {
+	r.Headers[name] = value
+
+	return r
+}
+
+func (r Response) SetStatus(status int) Response {
+	r.StatusCode = status
+
+	return r
+}
+
+func (r Response) SetBody(body []byte) Response {
+	r.Body = body
+
+	if _, ok := r.Headers["foo"]; !ok {
+		r.SetHeader("Content-Type", "text/plain")
+	}
+
+	return r
+}
+
+func (r Response) SetJson(body interface{}) Response {
+	marshalled, err := json.Marshal(body)
+
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Cannot marshal body")
+	}
+
+	r.SetHeader("Content-Type", "application/json")
+	r.Body = marshalled
+
+	return r
 }
 
 func (s *Server) Listen() error {
@@ -194,6 +233,8 @@ func (s *Server) parseBody(reader *bufio.Reader, contentLength int, request *Req
 }
 
 func (s *Server) writeResponse(response Response, conn net.Conn) {
+	hasBody := len(response.Body) != 0
+
 	conn.Write([]byte(fmt.Sprintf("HTTP/1.1 %d %s\r\n", response.StatusCode, "OK")))
 
 	layout := "Mon, 02 Jan 2006 15:04:05"
@@ -202,7 +243,21 @@ func (s *Server) writeResponse(response Response, conn net.Conn) {
 	conn.Write([]byte(fmt.Sprintf("Date: %s GMT\r\n", time.Now().In(loc).Format(layout))))
 	conn.Write([]byte("Server: Super Cool Awesome Server\r\n"))
 
+	// Override/set content lenght to length of body
+	if hasBody {
+		response.SetHeader("Content-Length", fmt.Sprint(len(response.Body)))
+	}
+
+	for key, value := range response.Headers {
+		conn.Write([]byte(fmt.Sprintf("%s: %s\r\n", key, value)))
+	}
+
 	conn.Write([]byte("\r\n"))
+
+	// Write body if it exists
+	if hasBody {
+		conn.Write(response.Body)
+	}
 }
 
 func CreateServer(options *ServerOptions) Server {
@@ -219,4 +274,9 @@ func CreateServer(options *ServerOptions) Server {
 		connType: connType,
 		handlers: handlers,
 	}
+}
+
+func CreateResponse() Response {
+	headers := make(map[string]string)
+	return Response{Headers: headers}
 }

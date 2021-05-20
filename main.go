@@ -12,12 +12,18 @@ const (
 	connPort = "8080"
 )
 
+type Person struct {
+	Id   int    `json"id"`
+	Name string `json:"name"`
+}
+
 func main() {
 	options := server.ServerOptions{Host: connHost, Port: connPort}
 	s := server.CreateServer(&options)
 
 	s.HandleFunc("/bacon", func(server.Request) server.Response {
-		return server.Response{StatusCode: 200}
+		p := Person{Id: 1, Name: "Dave"}
+		return server.CreateResponse().SetStatus(200).SetJson(p)
 	})
 
 	fmt.Println("Starting server on " + connHost + ":" + connPort)
